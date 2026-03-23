@@ -6,9 +6,10 @@ import time
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fetcher import PresidentialPostFetcher, PresidentialPost
-from sentiment import IranSentimentClassifier, Sentiment
-from trader import CoinbaseOptionsTrader, Trade
+from src.fetcher import PresidentialPostFetcher, PresidentialPost
+from src.sentiment import IranSentimentClassifier, Sentiment
+from src.trader import CoinbaseOptionsTrader, Trade
+from src.deribit_trader import DeribitTrader
 
 
 class IranSentimentTrader:
