@@ -87,8 +87,11 @@ class OKXTrader:
             self._time_offset = 0
 
     def _sign(self, method: str, path: str, body: str = "") -> dict:
-        # Use time synced with OKX server (in seconds, not milliseconds)
-        timestamp = str(int((time.time() * 1000 + self._time_offset) // 1000))
+        # Use server-synced timestamp in seconds
+        local_time_ms = int(time.time() * 1000)
+        server_synced_ms = local_time_ms + self._time_offset
+        timestamp = str(server_synced_ms // 1000)
+
         message = timestamp + method + path + body
 
         mac = hmac.new(
