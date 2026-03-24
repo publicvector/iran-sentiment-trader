@@ -56,11 +56,14 @@ class OKXTrader:
         self.simulation_mode = not (self.api_key and self.api_secret and self.passphrase)
 
         self._session = requests.Session()
+        self._time_offset = 0  # Will sync with OKX server time
 
         if self.simulation_mode:
             logger.warning("⚠️ Running in SIMULATION MODE - no real trades")
         else:
+            # Sync time with OKX server first
             try:
+                self._sync_time()
                 self._get_account_balance()
                 logger.info("✅ OKX credentials validated")
             except OKXAPIError as e:
@@ -68,8 +71,24 @@ class OKXTrader:
                 logger.warning("Running in SIMULATION MODE")
                 self.simulation_mode = True
 
+    def _sync_time(self):
+        """Sync local time with OKX server to fix timestamp errors."""
+        try:
+            # Get server time
+            resp = requests.get(f"{self.API_BASE_URL}/public/time", timeout=10)
+            data = resp.json()
+            if data.get("data"):
+                server_time = int(data["data"][0]["ts"])
+                local_time = int(time.time() * 1000)
+                self._time_offset = server_time - local_time
+                logger.info(f"OKX time sync: offset = {self._time_offset}ms")
+        except Exception as e:
+            logger.warning(f"Time sync failed: {e}")
+            self._time_offset = 0
+
     def _sign(self, method: str, path: str, body: str = "") -> dict:
-        timestamp = str(int(time.time()))
+        # Use time synced with OKX server (in seconds, not milliseconds)
+        timestamp = str(int((time.time() * 1000 + self._time_offset) // 1000))
         message = timestamp + method + path + body
 
         mac = hmac.new(
