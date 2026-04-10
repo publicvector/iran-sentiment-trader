@@ -46,13 +46,20 @@ class PresidentialPostFetcher:
     ]
 
     # Twitter user IDs for presidential accounts
-    # These are the numeric IDs for the accounts
     ACCOUNT_IDS = {
-        "potus": "822215673726779392",      # @potus
-        "whitehouse": "786317602383623360", # @whitehouse
-        "realtimepotus": "1130475034",      # @realtimepotus
-        "vp": "897698993295314945",         # @vp
+        "realdonaldtrump": "25073877",       # @realDonaldTrump — primary signal source
+        "potus": "822215673726779392",       # @POTUS
+        "whitehouse": "786317602383623360",  # @WhiteHouse
     }
+
+    # Iran-side official accounts — usernames resolved to IDs at init.
+    # Posts from these accounts bypass the Iran keyword filter since
+    # everything they say is by definition relevant.
+    IRAN_SOURCE_USERNAMES = [
+        "araghchi",    # Abbas Araghchi — Iran Foreign Minister
+        "IRIMFA_EN",   # Iran MFA (English)
+        "IRIMFA",      # Iran MFA (Persian)
+    ]
 
     API_BASE_URL = "https://api.twitter.com/2"
     MAX_RESULTS_PER_REQUEST = 20
@@ -60,12 +67,30 @@ class PresidentialPostFetcher:
     def __init__(self):
         self.bearer_token = os.getenv("TWITTER_BEARER_TOKEN")
         self._session = requests.Session()
+        self.iran_account_ids: dict = {}  # lowercased username -> user_id
 
         if self.bearer_token:
             self._session.headers.update({
                 "Authorization": f"Bearer {self.bearer_token}",
                 "Content-Type": "application/json"
             })
+            try:
+                self.iran_account_ids = self._resolve_usernames(self.IRAN_SOURCE_USERNAMES)
+                logger.info(f"Resolved Iran source accounts: {list(self.iran_account_ids.keys())}")
+            except TwitterAPIError as e:
+                logger.warning(f"Could not resolve Iran source usernames: {e}")
+
+    @property
+    def iran_source_names(self) -> set:
+        """Lowercased source names whose posts skip the English keyword filter."""
+        return set(self.iran_account_ids.keys())
+
+    def _resolve_usernames(self, usernames: List[str]) -> dict:
+        """Resolve Twitter usernames to numeric user IDs in one batch request."""
+        if not usernames:
+            return {}
+        data = self._make_request("/users/by", {"usernames": ",".join(usernames)})
+        return {u["username"].lower(): u["id"] for u in data.get("data", [])}
 
     def filter_iran_related(self, post: PresidentialPost) -> bool:
         """Check if post is related to Iran."""
@@ -151,7 +176,11 @@ class PresidentialPostFetcher:
 
         all_posts = []
 
-        for account_name, user_id in self.ACCOUNT_IDS.items():
+        # Combine presidential accounts + resolved Iran-side accounts
+        combined = dict(self.ACCOUNT_IDS)
+        combined.update(self.iran_account_ids)
+
+        for account_name, user_id in combined.items():
             try:
                 logger.info(f"Fetching tweets from @{account_name}")
                 tweets = self.get_user_tweets(user_id)
@@ -172,24 +201,23 @@ class PresidentialPostFetcher:
         Fetch recent posts from presidential accounts.
 
         If TWITTER_BEARER_TOKEN is set, uses real Twitter API.
-        Otherwise returns sample data for development/testing.
-
-        Args:
-            limit: Maximum number of posts to return
-
-        Returns:
-            List of Iran-related PresidentialPost objects
+        Otherwise returns empty list (Truth Social is primary source).
         """
-        if not self.bearer_token:
-            logger.warning("TWITTER_BEARER_TOKEN not set - using sample data")
-            return self._get_sample_posts()
+        if not self.bearer_token or len(self.bearer_token) < 20:
+            return []  # no valid token — Truth Social is primary source
 
         try:
             # Fetch all posts from Twitter
             posts = self.fetch_from_twitter()
 
-            # Filter for Iran-related posts
-            iran_posts = [p for p in posts if self.filter_iran_related(p)]
+            # Filter: keep posts from Iran-side accounts unconditionally
+            # (their feeds are already Iran-focused and may be in Persian),
+            # keyword-filter everything else.
+            iran_sources = self.iran_source_names
+            iran_posts = [
+                p for p in posts
+                if p.source.lower() in iran_sources or self.filter_iran_related(p)
+            ]
 
             # Sort by timestamp (newest first)
             iran_posts.sort(key=lambda p: p.timestamp, reverse=True)

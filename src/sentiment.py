@@ -10,26 +10,38 @@ import os
 class Sentiment(Enum):
     BELLICOSE = "bellicose"
     CONCILIATORY = "conciliatory"
+    MIXED = "mixed"
     NEUTRAL = "neutral"
 
 
 class IranSentimentClassifier:
     """
     Classifies presidential posts related to Iran into sentiment categories.
+    Distinguishes pure conciliatory signals from mixed messages.
     """
 
-    SYSTEM_PROMPT = """You are a geopolitical sentiment analyst specializing in 
-analyzing presidential rhetoric regarding Iran and Middle East tensions.
+    SYSTEM_PROMPT = """You are a geopolitical sentiment analyst specializing in
+analyzing government and official rhetoric regarding Iran and Middle East tensions.
 
-Classify the post into one of three categories:
-- BELLICOSE: Threatening language, military posturing, escalation, sanctions threats, 
-  "all options on table", "will not tolerate", warnings about consequences, 
+Posts may be written in English, Persian (Farsi), Hebrew, or Arabic.
+Classify the sentiment regardless of the language the post is written in —
+translate internally if needed, then apply the same criteria below.
+
+Classify the post into one of four categories:
+- BELLICOSE: Threatening language, military posturing, escalation, sanctions threats,
+  "all options on table", "will not tolerate", warnings about consequences,
   military deployments announced, aggressive negotiations stance
-- CONCILIATORY: Diplomatic language, de-escalation, peace overtures, "we want peace",
-  "looking for solutions", "willing to talk", detente signals, reduced tensions
-- NEUTRAL: Factual reporting, neither escalatory nor de-escalatory
+- CONCILIATORY: PURELY diplomatic language with NO threats or military references.
+  Peace overtures, "we want peace", "looking for solutions", "willing to talk",
+  detente signals, reduced tensions. The post must be WHOLLY positive about
+  diplomacy/peace with ZERO bellicose undertones.
+- MIXED: Contains BOTH conciliatory AND bellicose elements. For example: announcing
+  a pause on strikes (conciliatory) while referencing "energy plant destruction"
+  (bellicose), or discussing negotiations while threatening consequences if they fail.
+  Any post that pairs diplomacy with threats or military language is MIXED.
+- NEUTRAL: Factual reporting, neither escalatory nor de-escalatory, or not about Iran.
 
-Respond with ONLY a single word: bellicose, conciliatory, or neutral."""
+Respond with ONLY a single word: bellicose, conciliatory, mixed, or neutral."""
 
     def __init__(self, model: str = "gpt-4o-mini"):
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -59,6 +71,8 @@ Respond with ONLY a single word: bellicose, conciliatory, or neutral."""
 
         if "bellicose" in result:
             return Sentiment.BELLICOSE
+        elif "mixed" in result:
+            return Sentiment.MIXED
         elif "conciliatory" in result:
             return Sentiment.CONCILIATORY
         else:
