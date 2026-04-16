@@ -2,7 +2,9 @@
 from .agent import IranSentimentTrader
 from .sentiment import IranSentimentClassifier, Sentiment
 from .fetcher import PresidentialPostFetcher, PresidentialPost
-from .trader import CoinbaseOptionsTrader, Trade, Position
+from .trader import CoinbasePerpsTrader, Trade, Position
+from .kalshi_trader import KalshiTrader
+from .dydx_trader import DYDXTrader
 
 __all__ = [
     "IranSentimentTrader",
@@ -10,7 +12,9 @@ __all__ = [
     "Sentiment",
     "PresidentialPostFetcher",
     "PresidentialPost",
-    "CoinbaseOptionsTrader",
+    "CoinbasePerpsTrader",
+    "KalshiTrader",
+    "DYDXTrader",
     "Trade",
     "Position"
 ]

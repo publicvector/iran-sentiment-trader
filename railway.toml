@@ -1,0 +1,6 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python scripts/run_agent.py --exchange kalshi --poll 30"
+restartPolicyType = "always"

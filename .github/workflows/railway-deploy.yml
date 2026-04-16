@@ -1,0 +1,48 @@
+name: Deploy to Railway
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Link project
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ] || [ -z "$RAILWAY_PROJECT_ID" ]; then
+            echo "RAILWAY_TOKEN and RAILWAY_PROJECT_ID must be set as repo secrets" >&2
+            exit 1
+          fi
+          railway link --project "$RAILWAY_PROJECT_ID"
+
+      - name: Deploy service
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          # Deploy or redeploy the 'worker' service defined by Procfile
+          set -e
+          railway up -s worker --detached || railway redeploy -s worker
+
+      - name: Post-deploy check
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          # Tail a few lines to confirm startup; not fatal if logs are empty
+          railway logs -s worker --lines 100 || true
+

@@ -48,18 +48,11 @@ class PresidentialPostFetcher:
     # Twitter user IDs for presidential accounts
     ACCOUNT_IDS = {
         "realdonaldtrump": "25073877",       # @realDonaldTrump — primary signal source
-        "potus": "822215673726779392",       # @POTUS
-        "whitehouse": "786317602383623360",  # @WhiteHouse
     }
 
-    # Iran-side official accounts — usernames resolved to IDs at init.
-    # Posts from these accounts bypass the Iran keyword filter since
-    # everything they say is by definition relevant.
-    IRAN_SOURCE_USERNAMES = [
-        "araghchi",    # Abbas Araghchi — Iran Foreign Minister
-        "IRIMFA_EN",   # Iran MFA (English)
-        "IRIMFA",      # Iran MFA (Persian)
-    ]
+    # Iran-side official accounts — disabled. These generate too much
+    # mixed/neutral noise relative to Trump posts which are the primary signal.
+    IRAN_SOURCE_USERNAMES = []
 
     API_BASE_URL = "https://api.twitter.com/2"
     MAX_RESULTS_PER_REQUEST = 20
@@ -90,7 +83,7 @@ class PresidentialPostFetcher:
         if not usernames:
             return {}
         data = self._make_request("/users/by", {"usernames": ",".join(usernames)})
-        return {u["username"].lower(): u["id"] for u in data.get("data", [])}
+        return {u.get("username", "").lower(): u.get("id") for u in data.get("data", []) if u.get("username") and u.get("id")}
 
     def filter_iran_related(self, post: PresidentialPost) -> bool:
         """Check if post is related to Iran."""
@@ -115,7 +108,8 @@ class PresidentialPostFetcher:
                 errors = data["errors"]
                 if errors:
                     error = errors[0]
-                    raise TwitterAPIError(f"Twitter API error: {error.get('message', 'Unknown error')}")
+                    detail = error.get('message') or error.get('detail') or error.get('title') or str(error)
+                    raise TwitterAPIError(f"Twitter API error (HTTP {response.status_code}): {detail}")
 
             return data
 
@@ -144,23 +138,35 @@ class PresidentialPostFetcher:
 
         tweets = []
         if "data" in data:
-            includes = data.get("include", {}).get("users", [{}])
-            user_map = {u["id"]: u.get("username", "unknown") for u in includes}
+            # Twitter v2 uses 'includes' (plural) for expanded entities
+            includes = data.get("includes", {}).get("users", [])
+            user_map = {u.get("id"): u.get("username", "unknown") for u in includes if isinstance(u, dict)}
 
             for tweet in data["data"]:
+                if not isinstance(tweet, dict):
+                    continue
                 # Parse timestamp
                 created_at = tweet.get("created_at")
                 if created_at:
-                    timestamp = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                    try:
+                        timestamp = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                    except Exception:
+                        timestamp = datetime.now()
                 else:
                     timestamp = datetime.now()
 
-                tweets.append(PresidentialPost(
-                    id=tweet["id"],
-                    text=tweet["text"],
-                    source=user_map.get(tweet["author_id"], "unknown"),
-                    timestamp=timestamp
-                ))
+                text = tweet.get("text", "")
+                tid = tweet.get("id", "")
+                author_id = tweet.get("author_id")
+                source_name = user_map.get(author_id, "unknown")
+
+                if tid and text:
+                    tweets.append(PresidentialPost(
+                        id=tid,
+                        text=text,
+                        source=source_name,
+                        timestamp=timestamp
+                    ))
 
         return tweets
 

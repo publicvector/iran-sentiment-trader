@@ -87,10 +87,11 @@ class OKXTrader:
             self._time_offset = 0
 
     def _sign(self, method: str, path: str, body: str = "") -> dict:
-        # Use server-synced timestamp in seconds
+        # OKX requires ISO 8601 timestamp, e.g. 2026-03-24T08:49:16.123Z
         local_time_ms = int(time.time() * 1000)
         server_synced_ms = local_time_ms + self._time_offset
-        timestamp = str(server_synced_ms // 1000)
+        dt = datetime.utcfromtimestamp(server_synced_ms / 1000)
+        timestamp = dt.strftime('%Y-%m-%dT%H:%M:%S.') + f'{dt.microsecond // 1000:03d}Z'
 
         message = timestamp + method + path + body
 
@@ -114,7 +115,12 @@ class OKXTrader:
             return {}
 
         body_str = json.dumps(body) if body else ""
-        headers = self._sign(method, endpoint, body_str)
+        # OKX signature must use the full request path including query string
+        sign_path = f"/api/v5{endpoint}"
+        if params:
+            query_string = "&".join(f"{k}={v}" for k, v in params.items())
+            sign_path = f"{sign_path}?{query_string}"
+        headers = self._sign(method, sign_path, body_str)
         url = f"{self.API_BASE_URL}{endpoint}"
 
         try:
